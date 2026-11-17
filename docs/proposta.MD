@@ -14,8 +14,10 @@ Informe o nome provisório do jogo.
 
 ## 2. Integrantes do grupo
 
-- Nome 1: Lucas Elias Gonçalves Peixoto
-- Nome 2: Nathália Ramalho Abranches de Araújo
+- Nome 1: Daniel Guerra Costa 
+- Nome 2: Lucas Elias Gonçalves Peixoto
+- Nome 3: Nathália Ramalho Abranches de Araújo
+- Nome 4: Rafael de Alcântara Aguiar Cruz
 
 
 ## 3. Tema escolhido
