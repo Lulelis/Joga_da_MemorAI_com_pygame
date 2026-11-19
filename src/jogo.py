@@ -1,143 +1,193 @@
 import pygame
 
-from src.config import (
-    LARGURA_TELA,
-    ALTURA_TELA,
-    FPS,
-    TITULO_JOGO,
-    CINZA,
-    CAMINHO_RECORDE,
-    CAMINHO_SPRITES,
-)
+from src.config import ALTURA_TELA, FPS, LARGURA_TELA
+from src.partida import Partida
 
-from src.funcoes import (
-    calcular_pontos,
-    jogador_perdeu,
-    limitar_valor,
-    verificar_colisao,
-    tomar_dano,
-)
-from src.sprites import pegar_sprite
-from src.dados import (
-    salvar_recorde,
-    carregar_recorde,
-)
+COR_FUNDO = (24, 32, 48)
+COR_CARTA_FECHADA = (54, 75, 110)
+COR_CARTA_ABERTA = (236, 239, 244)
+COR_PAR_ENCONTRADO = (67, 135, 105)
+COR_TEXTO = (245, 245, 245)
+COR_TEXTO_CARTA = (30, 38, 52)
+COR_DESTAQUE = (255, 205, 92)
+PAUSA_ERRO_MS = 900
+TEMPO_PARTIDA_SEGUNDOS = 120
+
+
+def quebrar_texto(texto, fonte, largura_maxima):
+    """Divide um texto em linhas que cabem na largura indicada."""
+    palavras = texto.split()
+    linhas = []
+    linha_atual = ""
+
+    for palavra in palavras:
+        tentativa = f"{linha_atual} {palavra}".strip()
+
+        if fonte.size(tentativa)[0] <= largura_maxima:
+            linha_atual = tentativa
+        else:
+            if linha_atual:
+                linhas.append(linha_atual)
+            linha_atual = palavra
+
+    if linha_atual:
+        linhas.append(linha_atual)
+
+    return linhas
+
+
+def desenhar_carta(tela, carta, retangulo, fonte, fonte_pequena):
+    """Desenha uma carta fechada ou mostra seu conteúdo quando revelada."""
+    if carta.encontrada:
+        cor = COR_PAR_ENCONTRADO
+    elif carta.revelada:
+        cor = COR_CARTA_ABERTA
+    else:
+        cor = COR_CARTA_FECHADA
+
+    pygame.draw.rect(tela, cor, retangulo, border_radius=12)
+    pygame.draw.rect(
+        tela,
+        COR_DESTAQUE,
+        retangulo,
+        width=2,
+        border_radius=12,
+    )
+
+    if not carta.revelada and not carta.encontrada:
+        texto = fonte.render("MemorAI", True, COR_TEXTO)
+        tela.blit(texto, texto.get_rect(center=retangulo.center))
+        return
+
+    cor_texto = COR_TEXTO if carta.encontrada else COR_TEXTO_CARTA
+    categoria = fonte_pequena.render(carta.categoria, True, cor_texto)
+    tela.blit(categoria, (retangulo.x + 10, retangulo.y + 12))
+
+    linhas = quebrar_texto(carta.texto, fonte_pequena, retangulo.width - 20)
+    posicao_y = retangulo.y + 50
+
+    for linha in linhas:
+        texto = fonte_pequena.render(linha, True, cor_texto)
+        tela.blit(texto, (retangulo.x + 10, posicao_y))
+        posicao_y += texto.get_height() + 4
 
 
 def executar_jogo():
-    """Executa o loop principal do jogo e controla estado, colisões e pontuação."""
+    """Abre a janela e executa a primeira versão gráfica do MemorAI."""
     pygame.init()
-    
 
     tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
-    pygame.display.set_caption(TITULO_JOGO)
+    pygame.display.set_caption("MemorAI | Central de Auditoria")
 
     relogio = pygame.time.Clock()
+    fonte = pygame.font.Font(None, 30)
+    fonte_pequena = pygame.font.Font(None, 23)
+
+    partida = Partida()
+    cartas = partida.obter_cartas()
+
+    largura_carta = 170
+    altura_carta = 165
+    espacamento_x = 20
+    espacamento_y = 22
+    margem_x = 20
+    inicio_y = 155
+
+    retangulos = []
+
+    for indice in range(len(cartas)):
+        coluna = indice % 4
+        linha = indice // 4
+
+        x = margem_x + coluna * (largura_carta + espacamento_x)
+        y = inicio_y + linha * (altura_carta + espacamento_y)
+
+        retangulos.append(
+            pygame.Rect(x, y, largura_carta, altura_carta)
+        )
+
+    inicio_partida = pygame.time.get_ticks()
+    instante_erro = None
     rodando = True
 
-    # 1. Carregando as imagens recortadas do Spritesheet
-
-
-    # Jogador: usando tamanho 110x110 para capturar o quadrado perfeitamente
-    player_image = pegar_sprite(CAMINHO_SPRITES, x=110, y=120, width=190, height=190, scale=0.5)
-
-    # Gema pequena: usando tamanho 64x64
-    gem_image    = pegar_sprite(CAMINHO_SPRITES, x=900, y=690, width=200, height=200, scale=0.5)
-
-    # Morcego: usando tamanho 180x120 por causa das asas abertas
-    bat_image    = pegar_sprite(CAMINHO_SPRITES, x=905, y=1060, width=200, height=130, scale=0.5)
-    
-    # 2. Criando a estrutura de Sprites usando Dicionários
-    jogador = {
-        "imagem": player_image,
-        "rect": player_image.get_rect(topleft=(100, 100))
-    }
-
-    gema = {
-        "imagem": gem_image,
-        "rect": gem_image.get_rect(topleft=(500, 300))
-    }
-    
-    inimigo = {
-        "imagem": bat_image,
-        "rect": bat_image.get_rect(topleft=(200, 500))
-    }
-
-    velocidade = 5
-    pontos = 0
-    vidas = 3
-    recorde = carregar_recorde(CAMINHO_RECORDE)
-
-    # Loop principal: processa entrada, atualiza estado e renderiza a cena.
     while rodando:
-        relogio.tick(FPS)
+        agora = pygame.time.get_ticks()
+        tempo_decorrido = (agora - inicio_partida) // 1000
+        tempo_restante = max(
+            0,
+            TEMPO_PARTIDA_SEGUNDOS - tempo_decorrido,
+        )
+
+        if instante_erro is not None:
+            if agora - instante_erro >= PAUSA_ERRO_MS:
+                partida.ocultar_par_incorreto()
+                instante_erro = None
+
+        if tempo_restante == 0 and not partida.jogador_venceu():
+            rodando = False
 
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 rodando = False
 
-        teclas = pygame.key.get_pressed()
+            elif evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+                if instante_erro is None and not partida.jogador_venceu():
+                    for indice, retangulo in enumerate(retangulos):
+                        if retangulo.collidepoint(evento.pos):
+                            resultado = partida.selecionar_carta(indice)
 
-        # Movimentação alterando direto os eixos X e Y do retângulo do jogador
-        if teclas[pygame.K_LEFT]:
-            jogador["rect"].x -= velocidade
-        if teclas[pygame.K_RIGHT]:
-            jogador["rect"].x += velocidade
-        if teclas[pygame.K_UP]:
-            jogador["rect"].y -= velocidade
-        if teclas[pygame.K_DOWN]:
-            jogador["rect"].y += velocidade
+                            if resultado == "erro":
+                                instante_erro = pygame.time.get_ticks()
 
-        # Limitando o jogador dentro das bordas da tela usando as propriedades do Rect
-        jogador["rect"].x = limitar_valor(jogador["rect"].x, 0, LARGURA_TELA - jogador["rect"].width)
-        jogador["rect"].y = limitar_valor(jogador["rect"].y, 0, ALTURA_TELA - jogador["rect"].height)
+                            break
 
-        # Verificação de colisão com a Gema (antigo 'item')
-        if verificar_colisao(jogador["rect"], gema["rect"]):
-            pontos = calcular_pontos(pontos, 10)
+            elif evento.type == pygame.KEYDOWN:
+                if evento.key == pygame.K_ESCAPE:
+                    rodando = False
 
-            # Move a gema de lugar ao coletar
-            gema["rect"].x += 80
-            gema["rect"].y += 50
+        tela.fill(COR_FUNDO)
 
-            # Se a gema sair da tela, volta para uma posição segura
-            if gema["rect"].x > LARGURA_TELA - gema["rect"].width:
-                gema["rect"].x = 50
-            if gema["rect"].y > ALTURA_TELA - gema["rect"].height:
-                gema["rect"].y = 50
-
-        # Verificação de colisão com o Inimigo
-        if verificar_colisao(jogador["rect"], inimigo["rect"]):
-            vidas = tomar_dano(vidas, 1)
-
-            # Afasta o inimigo ao colidir
-            inimigo["rect"].x += 80
-            inimigo["rect"].y += 50
-
-            if inimigo["rect"].x > LARGURA_TELA - inimigo["rect"].width:
-                inimigo["rect"].x = 50
-            if inimigo["rect"].y > ALTURA_TELA - inimigo["rect"].height:
-                inimigo["rect"].y = 50
-
-        # Regras de fim de jogo e recorde
-        if jogador_perdeu(vidas):
-            rodando = False
-
-        if pontos > recorde:
-            recorde = pontos
-            salvar_recorde(CAMINHO_RECORDE, recorde)
-
-        pygame.display.set_caption(
-            f"{TITULO_JOGO} | Pontos: {pontos} | Recorde: {recorde} | Vidas: {vidas}"
+        titulo = fonte.render(
+            "MemorAI | Missão: auditar casos de IA",
+            True,
+            COR_TEXTO,
         )
+        tela.blit(titulo, (20, 20))
 
-        tela.fill(CINZA)
+        instrucoes = fonte_pequena.render(
+            "Encontre a solução responsável para cada problema.",
+            True,
+            COR_DESTAQUE,
+        )
+        tela.blit(instrucoes, (20, 65))
 
-        # Desenhando os elementos na tela passando a imagem e o rect de cada dicionário
-        tela.blit(gema["imagem"], gema["rect"])
-        tela.blit(inimigo["imagem"], inimigo["rect"])
-        tela.blit(jogador["imagem"], jogador["rect"])
+        status = (
+            f"Tempo: {tempo_restante}s   "
+            f"Pares: {partida.obter_pares_encontrados()}/4   "
+            f"Tentativas: {partida.obter_tentativas()}   "
+            f"Erros: {partida.obter_erros()}"
+        )
+        texto_status = fonte_pequena.render(status, True, COR_TEXTO)
+        tela.blit(texto_status, (20, 105))
+
+        for indice, carta in enumerate(cartas):
+            desenhar_carta(
+                tela,
+                carta,
+                retangulos[indice],
+                fonte,
+                fonte_pequena,
+            )
+
+        if partida.jogador_venceu():
+            mensagem = fonte.render(
+                "Auditoria concluída! Pressione Esc para sair.",
+                True,
+                COR_DESTAQUE,
+            )
+            tela.blit(mensagem, (20, 555))
 
         pygame.display.flip()
+        relogio.tick(FPS)
 
     pygame.quit()
