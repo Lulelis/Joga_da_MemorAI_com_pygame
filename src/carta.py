@@ -1,11 +1,12 @@
 class Carta:
     """Representa uma carta do jogo da memória."""
 
-    def __init__(self, identificador, categoria, texto):
+    def __init__(self, identificador, categoria, texto, explicacao= ""):
         """Guarda o par da carta, seu tipo e o texto mostrado ao jogador."""
         self.identificador = identificador
         self.categoria = categoria
         self.texto = texto
+        self.explicacao = explicacao
         self.revelada = False
         self.encontrada = False
 
